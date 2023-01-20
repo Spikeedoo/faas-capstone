@@ -1,0 +1,15 @@
+version: '3.9'
+services:
+  admin:
+    build: './admin'
+
+  builder:
+    build: './builder'
+
+  nginx-gateway:
+    build: './nginx-gateway'
+    ports:
+      - 80:80
+    depends_on:
+      - admin
+      - builder
