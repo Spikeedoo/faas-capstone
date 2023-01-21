@@ -2,12 +2,15 @@ version: '3.9'
 services:
   admin:
     build: './admin'
+    restart: always
 
   builder:
     build: './builder'
+    restart: always
 
   nginx-gateway:
     build: './nginx-gateway'
+    restart: always
     ports:
       - 80:80
     depends_on:
@@ -18,6 +21,7 @@ services:
     build:
       context: ./
       dockerfile: './core-db/Dockerfile'
+    restart: always
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=P@ssw0rd
@@ -25,5 +29,14 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+  registry:
+    image: registry:latest 
+    restart: always
+    environment:
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /data 
+    volumes:
+      - registry-data:/data 
+
 volumes:
   postgres-data:
+  registry-data:
