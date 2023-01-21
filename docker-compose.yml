@@ -13,3 +13,17 @@ services:
     depends_on:
       - admin
       - builder
+
+  core-db:
+    build:
+      context: ./
+      dockerfile: './core-db/Dockerfile'
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=P@ssw0rd
+      - POSTGRES_DB=database
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:
