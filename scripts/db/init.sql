@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS functions (
   "memory" TEXT NOT NULL,
   "cpus" TEXT NOT NULL,
   "type" TEXT NOT NULL,
+  "latestImageTag" TEXT,
 
   PRIMARY KEY ("name")
 );
