@@ -1,23 +1,34 @@
 version: '3.9'
 services:
   admin:
+    privileged: true
+    container_name: admin
     build: './admin'
     restart: always
-
-  builder:
-    build: './builder'
-    restart: always
+    environment:
+      - PGUSER=postgres
+      - PGPASSWORD=P@ssw0rd
+      - PGDATABASE=database
+      - PGHOST=core-db
+      - PGPORT=5432
+    volumes:
+      - type: bind 
+        source: ./shared   # Add shared utils
+        target: /app/shared
+        read_only: true
+      - /var/run/docker.sock:/var/run/docker.sock
 
   nginx-gateway:
+    container_name: nginx-gateway
     build: './nginx-gateway'
     restart: always
     ports:
       - 80:80
     depends_on:
       - admin
-      - builder
 
   core-db:
+    container_name: core-db
     build:
       context: ./
       dockerfile: './core-db/Dockerfile'
@@ -29,13 +40,14 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
-  registry:
-    image: registry:latest 
-    restart: always
-    environment:
-      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /data 
-    volumes:
-      - registry-data:/data 
+  # registry:
+  #   container_name: registry
+  #   image: registry:latest 
+  #   restart: always
+  #   environment:
+  #     REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /data 
+  #   volumes:
+  #     - registry-data:/data 
 
 volumes:
   postgres-data:
