@@ -3,6 +3,7 @@ const multer  = require('multer')
 const Docker = require('dockerode')
 const fs = require('fs/promises')
 var tar = require('tar')
+const pathLib = require('path')
 
 const docker = new Docker({socketPath: '/var/run/docker.sock'})
 const upload = multer({ dest: 'upload' })
@@ -12,6 +13,7 @@ const {
 } = require('../shared/utils')
 
 const db = require('../db')
+const { copyFiles, resolveBuildPath, resolveUploadPath, listFilesRecursively } = require('../utils')
 // Admin routes for cloud function CRUD operations
 
 // *** Helpers *** //
@@ -47,7 +49,6 @@ adminRoute.post('/info', async (req, res) => {
 adminRoute.post('/deploy', upload.single('deployment'), async (req, res) => {
   const { filename, path } = req.file
   const buildDir = buildDirStr(path)
-  const { functionName, env, module } = req.body
 
   try {
     // Create build dir
@@ -56,6 +57,7 @@ adminRoute.post('/deploy', upload.single('deployment'), async (req, res) => {
     // Untar to build dir
     await tar.x(
       {
+        strip: 1,
         file: path,
         cwd: buildDir,
       }
@@ -65,12 +67,12 @@ adminRoute.post('/deploy', upload.single('deployment'), async (req, res) => {
     res.status(400).send({ error: err })
   }
 
-  res.status(200).send({ buildId: filename, functionName })
+  res.status(200).send({ buildId: filename })
 
 })
 
 adminRoute.get('/build', async (req, res) => {
-  const { buildId, functionName } = req.query || {}
+  const { buildId, functionName, env, module, cpu, memory } = req.query || {}
   // Set up for event-stream response
   const headers = {
     'Content-Type': 'text/event-stream',
@@ -82,17 +84,55 @@ adminRoute.get('/build', async (req, res) => {
 
   const functionQuery = await db.query('SELECT * FROM functions WHERE name = $1', [functionName])
   const { rows = [] } = functionQuery
+
+  !rows.length ? res.write(`Creating new function: ${functionName}\n\n`) : res.write(`Updating function: ${functionName}\n\n`)
+
+  res.write('Setting up build environment...\n\n')
+
+  // Move template files in
+  await copyFiles(resolveBuildPath(env), buildDirStr(resolveUploadPath(buildId)))
+
+  res.write('Building function image...\n\n')
+
+  // Build function image
+  let stream = await docker.buildImage({
+      context: pathLib.resolve(__dirname, buildDirStr(resolveUploadPath(buildId))),
+      src: listFilesRecursively(resolveUploadPath(buildDirStr(buildId)), resolveUploadPath(buildDirStr(buildId))),
+    },
+    {
+      t: buildId,
+      buildargs: { module, target_function: functionName },
+    })
+
+  // TODO: Better error handling here
+  await new Promise((resolve, reject) => {
+    docker.modem.followProgress(stream, (err, res) => {
+      err ? reject(err) : resolve(res)
+    })
+  })
+
+  res.write(`New image built with id: ${buildId}\n\n`)
+
+  // Database functions
   if (!rows.length) {
-    res.write(`Creating new function: ${functionName}\n\n`)
-    // await db.query('')
+    await db.query('INSERT INTO functions (name, env, memory, cpus, type, "latestImageTag") VALUES ($1, $2, $3, $4, $5, $6)', [
+      functionName,
+      env,
+      memory,
+      cpu,
+      'http',
+      buildId,
+    ])
   } else {
-    res.write(`Updating function: ${functionName}\n\n`)
+    await db.query('UPDATE functions SET "latestImageTag" = $1 WHERE name = $2', [
+      buildId,
+      functionName,
+    ])
   }
 
-  res.write(`${buildId} is ready to build...\n\n`)
-
+  // Clean up
   res.write('Cleaning build files...\n\n')
-  await cleanUpBuildFiles(`upload/${buildId}`)
+  await cleanUpBuildFiles(resolveUploadPath(buildId))  
   res.write('Done!\n\n')
   res.end()
 })

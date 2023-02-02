@@ -2,11 +2,9 @@ FROM node:14-alpine3.17
 
 WORKDIR /function
 
-COPY package*.json ./
+COPY . ./
 
 RUN npm install
-
-COPY . ./
 
 ARG module
 ENV module=${module}
