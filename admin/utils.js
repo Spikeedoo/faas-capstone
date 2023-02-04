@@ -10,11 +10,9 @@ const listFilesRecursively = (dir, initialDir, list = []) => {
       listFilesRecursively(fullPath, initialDir, list)
      } else {
       // Add files to array without leading directory
-      console.log(fullPath)
       list.push(fullPath.split(initialDir+'/')[1])
      }
   })
-  console.log(list)
   return list
 }
 

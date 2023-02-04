@@ -26,6 +26,8 @@ services:
       - 80:80
     depends_on:
       - admin
+      - http-trigger
+      - executor
 
   core-db:
     container_name: core-db
@@ -40,15 +42,49 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
-  # registry:
-  #   container_name: registry
-  #   image: registry:latest 
-  #   restart: always
-  #   environment:
-  #     REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /data 
-  #   volumes:
-  #     - registry-data:/data 
+  http-trigger:
+    container_name: http-trigger
+    build: ./http-trigger
+    restart: always
+    environment:
+      - PGUSER=postgres
+      - PGPASSWORD=P@ssw0rd
+      - PGDATABASE=database
+      - PGHOST=core-db
+      - PGPORT=5432
+    volumes:
+      - type: bind 
+        source: ./shared   # Add shared utils
+        target: /app/shared
+        read_only: true
+    depends_on:
+      - rabbitmq
+
+  executor:
+    container_name: executor
+    build: ./executor
+    restart: always
+    environment:
+      - PGUSER=postgres
+      - PGPASSWORD=P@ssw0rd
+      - PGDATABASE=database
+      - PGHOST=core-db
+      - PGPORT=5432
+    volumes:
+      - type: bind 
+        source: ./shared   # Add shared utils
+        target: /app/shared
+        read_only: true
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - rabbitmq
+
+  rabbitmq:
+    container_name: rabbitmq
+    image: rabbitmq:3.11-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
 
 volumes:
   postgres-data:
-  registry-data:
