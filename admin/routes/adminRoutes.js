@@ -13,7 +13,7 @@ const {
 } = require('../shared/utils')
 
 const db = require('../db')
-const { copyFiles, resolveBuildPath, resolveUploadPath, listFilesRecursively } = require('../utils')
+const { copyFiles, resolveBuildPath, resolveUploadPath, listFilesRecursively, fileExists, VALID_ENV_NAMES, VALID_ENV_CONFIGS } = require('../utils')
 // Admin routes for cloud function CRUD operations
 
 // *** Helpers *** //
@@ -47,8 +47,14 @@ adminRoute.post('/info', async (req, res) => {
 
 // Deploy cloud function
 adminRoute.post('/deploy', upload.single('deployment'), async (req, res) => {
-  const { filename, path } = req.file
+  const { env } = req.body || {}
+  const { filename, path } = req.file || {}
   const buildDir = buildDirStr(path)
+
+  // Validate function environment before kicking off build
+  if (!VALID_ENV_NAMES.includes(env)) res.status(400).send({ error: 'Invalid environment!' })
+  // Since a valid env name was passed, get the rest of the env config
+  const selectedEnvConfig = VALID_ENV_CONFIGS.find(cfg => cfg.name === env) || {}
 
   try {
     // Create build dir
@@ -65,6 +71,13 @@ adminRoute.post('/deploy', upload.single('deployment'), async (req, res) => {
   } catch (err) {
     await cleanUpBuildFiles(path)
     res.status(400).send({ error: err })
+  }
+
+  // Validate existence of dependency/config file
+  const depFileExists = await fileExists(selectedEnvConfig.depFilePath)
+  if (!depFileExists) {
+    await cleanUpBuildFiles(path)
+    res.status(400).send({ error: `Missing a dependency file for your selected function environment (${env})!` })
   }
 
   res.status(200).send({ buildId: filename })

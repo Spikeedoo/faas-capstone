@@ -40,9 +40,36 @@ const resolveUploadPath = (file) => {
   return path.resolve('upload', file)
 }
 
+const fileExists = async (path) => {  
+  try {
+    await fs.access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Constants
+const ENV_NODE_14_CONFIG = {
+  name: 'node-14',
+  depFilePath: 'package.json'
+}
+
+const ENV_PYTHON3_CONFIG = {
+  name: 'python3',
+  depFilePath: 'requirements.txt',
+}
+
+const VALID_ENV_CONFIGS = [ENV_NODE_14_CONFIG, ENV_PYTHON3_CONFIG]
+const VALID_ENV_NAMES = VALID_ENV_CONFIGS.map(config => config.name)
+
 module.exports = {
   copyFiles,
   listFilesRecursively,
   resolveBuildPath,
   resolveUploadPath,
+  fileExists,
+
+  VALID_ENV_CONFIGS,
+  VALID_ENV_NAMES,
 }
