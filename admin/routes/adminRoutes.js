@@ -13,7 +13,7 @@ const {
 } = require('../shared/utils')
 
 const db = require('../db')
-const { copyFiles, resolveBuildPath, resolveUploadPath, listFilesRecursively, fileExists, VALID_ENV_NAMES, VALID_ENV_CONFIGS } = require('../utils')
+const { copyFiles, resolveBuildPath, resolveUploadPath, listFilesRecursively, fileExists, VALID_ENV_NAMES, VALID_ENV_CONFIGS, VALID_MEMORY_CONFIGS, VALID_CPU_CONFIGS } = require('../utils')
 // Admin routes for cloud function CRUD operations
 
 // *** Helpers *** //
@@ -47,12 +47,14 @@ adminRoute.post('/info', async (req, res) => {
 
 // Deploy cloud function
 adminRoute.post('/deploy', upload.single('deployment'), async (req, res) => {
-  const { env } = req.body || {}
+  const { env, functionName, module, cpu = "1", memory = "256" } = req.body || {}
   const { filename, path } = req.file || {}
   const buildDir = buildDirStr(path)
 
   // Validate function environment before kicking off build
-  if (!VALID_ENV_NAMES.includes(env)) res.status(400).send({ error: 'Invalid environment!' })
+  if (!VALID_ENV_NAMES.includes(env)) return res.status(400).send({ error: 'Invalid environment!' })
+  if (!VALID_MEMORY_CONFIGS.includes(memory)) return res.status(400).send({ error: 'Invalid memory value!' })
+  if (!VALID_CPU_CONFIGS.includes(cpu)) return res.status(400).send({ error: 'Invalid CPU value!' })
   // Since a valid env name was passed, get the rest of the env config
   const selectedEnvConfig = VALID_ENV_CONFIGS.find(cfg => cfg.name === env) || {}
 
@@ -70,50 +72,29 @@ adminRoute.post('/deploy', upload.single('deployment'), async (req, res) => {
     )
   } catch (err) {
     await cleanUpBuildFiles(path)
-    res.status(400).send({ error: err })
+    return res.status(400).send({ error: err })
   }
 
   // Validate existence of dependency/config file
   const depFileExists = await fileExists(selectedEnvConfig.depFilePath)
   if (!depFileExists) {
     await cleanUpBuildFiles(path)
-    res.status(400).send({ error: `Missing a dependency file for your selected function environment (${env})!` })
+    return res.status(400).send({ error: `Missing a dependency file for your selected function environment (${env})!` })
   }
-
-  res.status(200).send({ buildId: filename })
-
-})
-
-adminRoute.get('/build', async (req, res) => {
-  const { buildId, functionName, env, module, cpu, memory } = req.query || {}
-  // Set up for event-stream response
-  const headers = {
-    'Content-Type': 'text/event-stream',
-    'Connection': 'keep-alive',
-    'Cache-Control': 'no-cache',
-    'Access-Control-Allow-Origin': '*',
-  }
-  res.writeHead(200, headers)
 
   const functionQuery = await db.query('SELECT * FROM functions WHERE name = $1', [functionName])
   const { rows = [] } = functionQuery
 
-  !rows.length ? res.write(`Creating new function: ${functionName}\n\n`) : res.write(`Updating function: ${functionName}\n\n`)
-
-  res.write('Setting up build environment...\n\n')
-
   // Move template files in
-  await copyFiles(resolveBuildPath(env), buildDirStr(resolveUploadPath(buildId)))
-
-  res.write('Building function image...\n\n')
+  await copyFiles(resolveBuildPath(env), buildDirStr(resolveUploadPath(filename)))
 
   // Build function image
   let stream = await docker.buildImage({
-      context: pathLib.resolve(__dirname, buildDirStr(resolveUploadPath(buildId))),
-      src: listFilesRecursively(resolveUploadPath(buildDirStr(buildId)), resolveUploadPath(buildDirStr(buildId))),
+      context: pathLib.resolve(__dirname, buildDirStr(resolveUploadPath(filename))),
+      src: listFilesRecursively(resolveUploadPath(buildDirStr(filename)), resolveUploadPath(buildDirStr(filename))),
     },
     {
-      t: buildId,
+      t: filename,
       buildargs: { module, target_function: functionName },
     })
 
@@ -124,8 +105,6 @@ adminRoute.get('/build', async (req, res) => {
     })
   })
 
-  res.write(`New image built with id: ${buildId}\n\n`)
-
   // Database functions
   if (!rows.length) {
     await db.query('INSERT INTO functions (name, env, memory, cpus, type, "latestImageTag") VALUES ($1, $2, $3, $4, $5, $6)', [
@@ -134,20 +113,19 @@ adminRoute.get('/build', async (req, res) => {
       memory,
       cpu,
       'http',
-      buildId,
+      filename,
     ])
   } else {
     await db.query('UPDATE functions SET "latestImageTag" = $1 WHERE name = $2', [
-      buildId,
+      filename,
       functionName,
     ])
   }
 
   // Clean up
-  res.write('Cleaning build files...\n\n')
-  await cleanUpBuildFiles(resolveUploadPath(buildId))  
-  res.write('Done!\n\n')
-  res.end()
+  await cleanUpBuildFiles(resolveUploadPath(filename))  
+
+  return res.status(200).send({ success: true })
 })
 
 // Delete cloud function

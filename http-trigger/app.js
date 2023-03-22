@@ -2,7 +2,6 @@ const express = require('express')
 const cors = require('cors')
 const bodyParser = require('body-parser')
 const db = require('./db')
-const amqp = require('amqplib/callback_api')
 const EventEmitter = require('events')
 const crypto = require('crypto')
 
@@ -18,36 +17,29 @@ app.use(cors())
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: false }))
 
-app.listen(PORT, (error) => {
-  if (error) console.error(error)
-  else console.log(`Backend running on port ${PORT}!`)
-})
-
 const txQueue = MESSAGE_QUEUES.EXECUTION_QUEUE
 const rxQueue = MESSAGE_QUEUES.EXECUTION_RESPONSE_QUEUE
 
 const rxEventEmitter = new EventEmitter()
 
-let rabbitChannel
+let rabbitChannel = null
 
-amqp.connect('amqp://guest:guest@rabbitmq:5672', function(error0, connection) {
-  if (error0) {
-    throw error0
-  }
-  connection.createChannel(function(error1, channel) {
-    if (error1) {
-      throw error1
-    }
-    rabbitChannel = channel
-    channel.assertQueue(txQueue, { durable: false })
-    channel.assertQueue(rxQueue, { durable: false })
+const init = () => {
+  return require('amqplib').connect('amqp://guest:guest@rabbitmq:5672')
+    .then(connection => connection.createChannel())
+    .then(channel => {
+      rabbitChannel = channel
 
-    // Listen for responses
-    channel.consume(rxQueue, async (msg) => {
-      rxEventEmitter.emit('rx', msg)
-    }, { noAck: true })
-  })
-})
+      channel.assertQueue(txQueue, { durable: false })
+      channel.assertQueue(rxQueue, { durable: false })
+
+      // Listen for responses
+      channel.consume(rxQueue, async (msg) => {
+        rxEventEmitter.emit('rx', msg)
+      }, { noAck: true })
+    })
+}
+
 
 
 app.post('/:functionName', async (req, res) => {
@@ -71,3 +63,7 @@ app.post('/:functionName', async (req, res) => {
     if (executionId === returnedExecutionId) return res.status(200).json(JSON.parse(response))
   })
 })
+
+init()
+  .then(() => app.listen(PORT, () => console.log(`Backend running on port ${PORT}!`)))
+  .catch(err => console.error(err))

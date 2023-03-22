@@ -63,6 +63,9 @@ const ENV_PYTHON3_CONFIG = {
 const VALID_ENV_CONFIGS = [ENV_NODE_14_CONFIG, ENV_PYTHON3_CONFIG]
 const VALID_ENV_NAMES = VALID_ENV_CONFIGS.map(config => config.name)
 
+const VALID_MEMORY_CONFIGS = ["128", "256", "512", "1024", "2048", "4096", "8192"]
+const VALID_CPU_CONFIGS = ["1", "2", "4"]
+
 module.exports = {
   copyFiles,
   listFilesRecursively,
@@ -72,4 +75,6 @@ module.exports = {
 
   VALID_ENV_CONFIGS,
   VALID_ENV_NAMES,
+  VALID_MEMORY_CONFIGS,
+  VALID_CPU_CONFIGS,
 }
