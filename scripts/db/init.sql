@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS functions (
   "cpus" INT NOT NULL DEFAULT 1,
   "type" TEXT NOT NULL DEFAULT 'http',
   "latest_image_tag" TEXT,
-  "latestDeployDate" TIMESTAMP,
+  "latest_deploy_date" TIMESTAMP,
 
   PRIMARY KEY ("name")
 );
