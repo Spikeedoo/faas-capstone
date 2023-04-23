@@ -19,11 +19,18 @@ import (
 var cfgFile string
 
 const CONFIG_REMOTE_SERVER string = "CONFIG_REMOTE_SERVER"
+const CONFIG_ACCESS_TOKEN string = "CONFIG_ACCESS_TOKEN"
 
 // Types
 type DEPLOY_RESPONSE struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error"`
+}
+
+type LOGIN_RESPONSE struct {
+	Success     bool   `json:"success"`
+	Error       string `json:"error"`
+	AccessToken string `json:"accessToken"`
 }
 
 // Helper functions
@@ -47,6 +54,58 @@ var rootCmd = &cobra.Command{
 	// Run: func(cmd *cobra.Command, args []string) { },
 }
 
+// *** This command is to log in as an admin *** //
+var loginCmd = &cobra.Command{
+	Use:   "login",
+	Short: "Used to log admin in",
+	Run: func(cmd *cobra.Command, args []string) {
+		if !cmd.Flags().Lookup("u").Changed || !cmd.Flags().Lookup("p").Changed {
+			fmt.Println("Missing a required field!\nPlease use faas login --u <user> --p <password> to log in.")
+			return
+		}
+		// Verify that a server has been set
+		serverUrl := viper.Get(CONFIG_REMOTE_SERVER)
+		if serverUrl == nil {
+			fmt.Println("You have not configured a remote server!\nPlease use faas config --server <IP>")
+			return
+		}
+		httpClient := http.Client{}
+		loginUrl := serverUrl.(string) + "/api/auth/login"
+		user, _ := cmd.Flags().GetString("u")
+		pass, _ := cmd.Flags().GetString("p")
+
+		loginBody := []byte(fmt.Sprintf(`{
+			"username": "%s",
+			"password": "%s"
+		}`, user, pass))
+
+		loginReq, err := http.NewRequest("POST", loginUrl, bytes.NewBuffer(loginBody))
+		check(err)
+
+		loginReq.Header.Add("Content-Type", "application/json")
+
+		res, err := httpClient.Do(loginReq)
+		check(err)
+
+		defer res.Body.Close()
+
+		loginRes := new(LOGIN_RESPONSE)
+		parseJson(res.Body, loginRes)
+		if loginRes.Error != "" || loginRes.AccessToken == "" {
+			fmt.Println(loginRes.Error)
+			return
+		}
+
+		viper.Set(CONFIG_ACCESS_TOKEN, loginRes.AccessToken)
+		atErr := viper.WriteConfig()
+		if atErr != nil {
+			fmt.Println(atErr)
+		} else {
+			fmt.Println("Logged in!")
+		}
+	},
+}
+
 // *** This command is used to deploy a function to the remote server *** //
 var deployCmd = &cobra.Command{
 	Use:   "deploy",
@@ -63,9 +122,13 @@ var deployCmd = &cobra.Command{
 
 		// Verify that a server has been set
 		serverUrl := viper.Get(CONFIG_REMOTE_SERVER)
+		// Verify that user has an access token
+		accessToken := viper.Get(CONFIG_ACCESS_TOKEN)
 		// Verify that an env has been passed
 		if serverUrl == nil {
 			fmt.Println("You have not configured a remote server!\nPlease use faas config --server <IP>")
+		} else if accessToken == nil {
+			fmt.Println("You have not logged in!\nPlease use faas login --u <username> --p <password>")
 		} else if !cmd.Flags().Lookup("env").Changed {
 			fmt.Println("Missing a target environment!\nPlease add the --env <envname> flag!")
 		} else if !cmd.Flags().Lookup("name").Changed {
@@ -73,7 +136,7 @@ var deployCmd = &cobra.Command{
 		} else if !cmd.Flags().Lookup("module").Changed {
 			fmt.Println("Missing a module path!\nPlease add the --module <path> flag!")
 		} else {
-			fmt.Println("Staring function deploy...")
+			fmt.Println("Starting function deploy...")
 
 			env, _ := cmd.Flags().GetString("env")
 			name, _ := cmd.Flags().GetString("name")
@@ -112,7 +175,10 @@ var deployCmd = &cobra.Command{
 			deployReq, err := http.NewRequest("POST", deployUrl, buf)
 			check(err)
 
+			tokenString := "Bearer " + accessToken.(string)
+
 			deployReq.Header.Add("Content-Type", w.FormDataContentType())
+			deployReq.Header.Add("Authorization", tokenString)
 
 			res, err := httpClient.Do(deployReq)
 			check(err)
@@ -154,7 +220,7 @@ var configCmd = &cobra.Command{
 				fmt.Println("Remote server set:", server)
 			}
 		} else {
-			fmt.Println("")
+			fmt.Println("Please enter a server URL with --server!")
 		}
 	},
 }
@@ -187,8 +253,12 @@ func init() {
 	deployCmd.Flags().String("name", "n", "")
 	deployCmd.Flags().String("module", "m", "")
 
+	loginCmd.Flags().String("u", "u", "")
+	loginCmd.Flags().String("p", "p", "")
+
 	rootCmd.AddCommand(deployCmd)
 	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(loginCmd)
 }
 
 // initConfig reads in config file and ENV variables if set.

@@ -7,6 +7,7 @@ const pathLib = require('path')
 
 const docker = new Docker({socketPath: '/var/run/docker.sock'})
 const upload = multer({ dest: 'upload' })
+const adminAuth = require('../middleware/auth')
 
 const {
   ERROR_CONSTANTS,
@@ -25,7 +26,7 @@ const cleanUpBuildFiles = async (buildId) => {
 }
 
 // *** Routes *** //
-
+adminRoute.use(adminAuth)
 // List cloud functions
 adminRoute.get('/list', async (_, res) => {
   const cloudFunctionList = await db.query('SELECT * FROM functions')
@@ -47,7 +48,7 @@ adminRoute.post('/info', async (req, res) => {
 
 // Deploy cloud function
 adminRoute.post('/deploy', upload.single('deployment'), async (req, res) => {
-  const { env, functionName, module, cpu = "1", memory = "256" } = req.body || {}
+  const { env, functionName, module, cpu = "1", memory = 256 } = req.body || {}
   const { filename, path } = req.file || {}
   const buildDir = buildDirStr(path)
 
@@ -107,17 +108,19 @@ adminRoute.post('/deploy', upload.single('deployment'), async (req, res) => {
 
   // Database functions
   if (!rows.length) {
-    await db.query('INSERT INTO functions (name, env, memory, cpus, type, "latestImageTag") VALUES ($1, $2, $3, $4, $5, $6)', [
+    await db.query('INSERT INTO functions (name, env, memory, cpus, type, latest_image_tag, latest_deploy_date) VALUES ($1, $2, $3, $4, $5, $6, to_timestamp($7))', [
       functionName,
       env,
       memory,
       cpu,
       'http',
       filename,
+      Date.now() / 1000.0,
     ])
   } else {
-    await db.query('UPDATE functions SET "latestImageTag" = $1 WHERE name = $2', [
+    await db.query('UPDATE functions SET latest_image_tag = $1, latest_deploy_date = to_timestamp($2) WHERE name = $3', [
       filename,
+      Date.now() / 1000.0,
       functionName,
     ])
   }

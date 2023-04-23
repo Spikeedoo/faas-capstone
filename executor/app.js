@@ -38,10 +38,16 @@ amqp.connect('amqp://guest:guest@rabbitmq:5672', function(error0, connection) {
       const functionQuery = await db.query('SELECT * FROM functions WHERE name = $1', [functionName])
       const { rows = [] } = functionQuery
       const targetFunction = rows[0]
-      const { latestImageTag } = targetFunction
+      const { latest_image_tag, memory = 256 } = targetFunction
+
+      const createOptions = {
+        HostConfig: {
+          Memory: memory * 1000 * 1000, // MB -> Bytes
+        },
+      }
 
       // Execute the function
-      const [_, container] = await docker.run(latestImageTag, [JSON.stringify(params)], stdout)
+      const [_, container] = await docker.run(latest_image_tag, [JSON.stringify(params)], stdout, createOptions)
 
       // Capture the response
       const response = await finalStream(stdout).then(buffer => buffer.toString())
